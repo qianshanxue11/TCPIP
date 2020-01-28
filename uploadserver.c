@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <WinSock2.h>
-
+#pragma warning(disable : 4996)
 #define MAX_SIZE 10240
 #define PORT 8888
 void serveoneclient(void* s);

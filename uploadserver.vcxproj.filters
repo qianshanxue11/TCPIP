@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="uploadclient.c">
+    <ClCompile Include="uploadserver.c">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
