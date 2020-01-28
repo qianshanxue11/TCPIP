@@ -58,7 +58,68 @@ void serveoneclient(void* s)
 	printf("\n\n创建线程成功!\n\n\n");
 	char filename[MAX_PATH];
 	char data[MAX_SIZE];
+	int i;
+	char ch;
+	FILE* fp;
+	printf("receive filename\n");
 
+	memset((void*)filename, 0, sizeof(filename));
+	for (i = 0; i < sizeof(filename); i++)
+	{
+		if (recv(*(SOCKET*)s, &ch, 1, 0) != 1)
+		{
+			printf("receive failed or client close connection\n");
+			closesocket(*(SOCKET*)s);
+			return;
+		}
+
+		if (ch == 0)
+		{
+			break;
+		}
+
+		filename[i] = ch;
+	}
+
+	if (i == sizeof(filename))
+	{
+		printf("filename too long\n");
+		closesocket(*(SOCKET*)s);
+		return;
+	}
+	printf("filename =%s\n", filename);
+	fp = fopen(filename, "wb");
+	if (fp == NULL)
+	{
+		printf("can't open the file with WRITEMODE\n");
+		closesocket(*(SOCKET*)s);
+		return;
+	}
+	printf("the content of receive");
+	memset((void*)data, 0, sizeof(data));
+	while (1)
+	{
+		i = recv(*(SOCKET*)s, data, sizeof(data),0);
+		putchar('.');
+		if (i == SOCKET_ERROR)
+		{
+			printf("\n receive failed,file may be incomplete\n");
+			break;
+		}
+		else if (i == 0)
+		{
+			printf("\n receive successs\n");
+			break;
+		}
+		else
+		{
+			fwrite((void*)data, 1, i, fp);
+		}
+	}
+	printf("%s", data);
+	fclose(fp);
+	_endthread();
+	closesocket(*(SOCKET*)s);
 }
 
 
