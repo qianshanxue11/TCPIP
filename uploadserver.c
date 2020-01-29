@@ -2,80 +2,99 @@
 #include <stdlib.h>
 #include <WinSock2.h>
 #pragma warning(disable : 4996)
+// Need to link with Ws2_32.lib
+#pragma comment (lib, "Ws2_32.lib")
 #define MAX_SIZE 10240
 #define PORT 8888
+
 void clientprocessthread(void* s);//client上传的线程
 void reportconnectinfo(SOCKET s);
-char receivecmdfromclient(void* s);
 
 int main(int argc, char* argv[])
 {
-	WSADATA wsadata;
-	SOCKET serversocket, clientsocket;
+	WSADATA wsaData; 
+	SOCKET ListenSocket, ClientSocket;
 	static SOCKET* presentclientsocket;
 	struct sockaddr_in serveraddr;
 	struct sockaddr_in clientaddr;
 	int nclientaddrlen;
+	int iResult;
+	//WSAStartup(0x202, &wsaData);
+	// Initialize Winsock
+	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+	if (iResult != 0) {
+		printf("WSAStartup failed with error: %d\n", iResult);
+		return 1;
+	}
 
-	WSAStartup(0x202, &wsadata);
-
-	serversocket = socket(AF_INET, SOCK_STREAM, 0);
-
+	// Create a SOCKET for connecting to server
+	ListenSocket = socket(AF_INET, SOCK_STREAM, 0);
+	if (ListenSocket == INVALID_SOCKET) {
+		printf("socket failed with error: %ld\n", WSAGetLastError());
+		WSACleanup();
+		return 1;
+	}
+	// Setup the TCP listening socket
 	memset((void*)&serveraddr, 0, sizeof(serveraddr));
 	serveraddr.sin_family = AF_INET;
 	serveraddr.sin_addr.s_addr = inet_addr("0.0.0.0");
 	serveraddr.sin_port = htons(PORT);
 
-	bind(serversocket, (struct sockaddr*) & serveraddr, sizeof(serveraddr));
-	listen(serversocket, SOMAXCONN);
-	printf("Server is run now ,listen on PORT %d!\n", PORT);
+	iResult=bind(ListenSocket, (struct sockaddr*) & serveraddr, sizeof(serveraddr));
+	if (iResult == SOCKET_ERROR) {
+		printf("bind failed with error: %d\n", WSAGetLastError());
+		closesocket(ListenSocket);
+		WSACleanup();
+		return 1;
+	}
+
+	iResult=listen(ListenSocket, SOMAXCONN);
+	if (iResult == SOCKET_ERROR) {
+		printf("listen failed with error: %d\n", WSAGetLastError());
+		closesocket(ListenSocket);
+		WSACleanup();
+		return 1;
+	}
+	else if(iResult == 0) //没有错误，返回0
+	{
+		printf("Server is run now ,listening on PORT %d!\n", PORT);
+	}
 
 	while (1)
 	{
 		nclientaddrlen = sizeof(clientaddr);
-
 		memset((void*)&clientaddr, 0, nclientaddrlen);
-		clientsocket = accept(serversocket, (struct sockaddr*) & clientaddr, &nclientaddrlen);
-		presentclientsocket = &clientsocket;
-
-		//printf("Client(%s:%d)has connected!\n", inet_ntoa(clientaddr.sin_addr), ntohs(clientaddr.sin_port));
-		printf("Waiting for cmd from client\n");
-		//char cmdreceive = receivecmdfromclient(presentclientsocket);
-		char cmdreceive;
-		//if (recv(presentclientsocket, &cmdreceive, 1, 0) != 1)   //读取一个字符，判断是否为1，如果不等于1，则相当于没连接或读取失败
-		//{
-		//	printf("receive failed or client close connection\n");
-		//	closesocket(presentclientsocket);
-		//	return;
-		//}
-
+		// Accept a client socket
+		ClientSocket = accept(ListenSocket, (struct sockaddr*) & clientaddr, &nclientaddrlen);
+		if (ClientSocket == INVALID_SOCKET) {
+			printf("accept failed with error: %d\n", WSAGetLastError());
+			closesocket(ListenSocket);
+			WSACleanup();
+			return 1;
+		}
+		presentclientsocket = &ClientSocket;
 		//启动一个线程处理一个客户端
 		_beginthread(clientprocessthread, 0, (void*)presentclientsocket);
 		Sleep(1000);
 		//输出双方的IP地址和端口信息
-		reportconnectinfo(clientsocket);
-
+		reportconnectinfo(ClientSocket);
 	}
-
-	closesocket(serversocket);
+	closesocket(ListenSocket);
 	WSACleanup();
 	return 0;
 }
-
 //处理客户端文件处理(上传下载)的线程
-
 void clientprocessthread(void* s)
 {
 	printf("\n\n创建客户端上传线程成功!\n\n\n");
+	printf("Waiting for cmd from client\n");
 	char filename[MAX_PATH];  //文件名最长MAX_PATH
 	char data[MAX_SIZE];
 	int i;
 	char ch;
 	char cmdreceive;
 	FILE* fp;
-	FILE* fsendp;
-	//printf("Receive filename\n");
-	//接收指令
+	//接收指令,由于约定指令只有一个字符，所以读取一个即可
 	//recv(*(SOCKET*)s, &cmdreceive, 1, 0);
 	if (recv(*(SOCKET*)s, &cmdreceive, 1, 0) != 1)   //读取一个字符，判断读取的数量是否为1，如果不等于1，则相当于没连接或读取失败
 	{
@@ -87,8 +106,9 @@ void clientprocessthread(void* s)
 	switch (cmdreceive)
 	{
 	case 's'://send from client to server
-		printf("s Receive cmd is cmdreceive =%c\n", cmdreceive);
-		memset((void*)filename, 0, sizeof(filename));
+		printf("Case :s Receive cmd is cmdreceive =%c\n", cmdreceive);
+		/*读取客户端发来的文件名，文件名长度不确定，需要连续单个字符的读取，读取到client发送的'0'认为文件名读取完成*/
+		memset((void*)filename, 0, sizeof(filename));  //直接初始化为'0'
 		for (i = 0; i < sizeof(filename); i++)
 		{
 			if (recv(*(SOCKET*)s, &ch, 1, 0) != 1)   //读取一个字符，判断读取的数量是否为1，如果不等于1，则相当于没连接或读取失败
@@ -114,6 +134,7 @@ void clientprocessthread(void* s)
 			return;
 		}
 		printf(" Receive Filename is =%s\n", filename);
+		/*以只读二进制模式，打开文件，创建新文件若存在同名文件，则覆盖成空文件*/
 		fp = fopen(filename, "wb");
 		if (fp == NULL)
 		{
@@ -122,6 +143,7 @@ void clientprocessthread(void* s)
 			return;
 		}
 		printf("-----The content from client------\n");
+		/*读取客户端发送来的文件内容，保存到data数组内之后保存到文件*/
 		memset((void*)data, 0, sizeof(data));
 		while (1)
 		{
@@ -139,14 +161,25 @@ void clientprocessthread(void* s)
 			}
 			else
 			{
-				fwrite((void*)data, 1, i, fp);
+				wprintf(L"Bytes received: %d\n", i);
+				//将收到的数据保存到文件
+				if (fwrite((void*)data, 1, i, fp) == i)
+				{
+					wprintf(L"Write to file successfully\n");
+				}
+				else {
+					wprintf(L"write to filefailed ,file is not equal the receive data\n");
+				}
+				//fwrite((void*)data, 1, i, fp);
 			}
 		}
 		printf("%s\n", data);
 		printf("-----RECEIVE FINISH--------------\n");
+		closesocket(*(SOCKET*)s);  //添加测试是否有效
+		//WSACleanup();
+		reportconnectinfo(*(SOCKET*)s);
 		fclose(fp);
 		break;
-
 	case 'g'://client download from server
 		printf("g Receive cmd is cmdreceive =%c\n", cmdreceive);
 		//接收client发来的文件名
@@ -175,8 +208,8 @@ void clientprocessthread(void* s)
 		}
 		printf(" Receive Filename is =%s\n", filename);
 		printf(" Prepare to open the the Filename is =%s\n", filename);
-		fsendp = fopen(filename, "rb");
-		if (fsendp == NULL)
+		fp = fopen(filename, "rb");
+		if (fp == NULL)
 		{
 			printf("Can't open the file with READMODE\n");
 			closesocket(*(SOCKET*)s);
@@ -186,7 +219,7 @@ void clientprocessthread(void* s)
 		while (1)
 		{
 			memset((void*)data, 0, sizeof(data));
-			i = fread(data, 1, sizeof(data), fsendp);
+			i = fread(data, 1, sizeof(data), fp);
 			if (i == 0)
 			{
 				printf("\n send successly\n");
@@ -196,19 +229,22 @@ void clientprocessthread(void* s)
 			putchar('.');
 			if (send(*(SOCKET*)s, data, i, 0) == SOCKET_ERROR)
 			{
-				printf("\n send failed,file maybe not complete\n");
+				printf("\n Send failed,file maybe not complete\n");
 				break;
 			}
 		}
-		fclose(fsendp);
+		fclose(fp);
 		closesocket(*(SOCKET*)s);  //添加测试是否有效
+		//WSACleanup();
 		reportconnectinfo(*(SOCKET*)s);
 		break;
 	default:
 		printf("default Receive cmd is cmdreceive =%c\n", cmdreceive);
 		break;
 	}
-
+	printf("thread end\n");
+	closesocket(*(SOCKET*)s);  //添加测试是否有效
+	//WSACleanup();
 	_endthread();
 	//closesocket(*(SOCKET*)s);
 }
@@ -230,16 +266,6 @@ void reportconnectinfo(SOCKET s)
 	printf("--One Client (%s:%d)has connected to this server!--\n", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
 }
 
-char receivecmdfromclient(void* s)
-{
-	char cmdreceive='a';
-		if (recv(*(SOCKET*)s, &cmdreceive, 1, 0) != 1)   //读取一个字符，判断是否为1，如果不等于1，则相当于没连接或读取失败
-		{
-			printf("receive failed or client close connection\n");
-			closesocket(*(SOCKET*)s);
-			return;
-		}
-	return cmdreceive;
-}
+
 
 
